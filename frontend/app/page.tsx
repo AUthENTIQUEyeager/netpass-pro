@@ -1,189 +1,244 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { ArrowRight, ChevronRight, Wifi, Package, CreditCard, Ticket, CheckCircle, Zap, Users, TrendingUp, Activity } from 'lucide-react';
-import { getForfaits, getRouteurs } from '@/lib/api';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { CheckCircle, Copy, Download, Wifi, AlertCircle, Loader } from 'lucide-react';
+import { getCommande } from '@/lib/api';
 import Navbar from '@/components/ui/Navbar';
 
-export default function HomePage() {
-  const [forfaits, setForfaits] = useState<any[]>([]);
-  const [routeurs, setRouteurs] = useState<any[]>([]);
-  const router = useRouter();
+function TicketContent() {
+  const params = useSearchParams();
+  const ref = params.get('ref');
+  const [commande, setCommande] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [copied, setCopied] = useState<string | null>(null);
+  const [polling, setPolling] = useState(0);
 
   useEffect(() => {
-    getForfaits().then(setForfaits).catch(() => {});
-    getRouteurs().then(setRouteurs).catch(() => {});
-  }, []);
+    if (!ref) { setError('Reference de commande manquante'); setLoading(false); return; }
+    fetchCommande();
+  }, [ref]);
+
+  // Polling si ticket pas encore prêt (MikroTik en cours)
+  useEffect(() => {
+    if (!commande) return;
+    if (commande.statut === 'en_traitement' && polling < 10) {
+      const t = setTimeout(() => {
+        setPolling(p => p + 1);
+        fetchCommande();
+      }, 3000);
+      return () => clearTimeout(t);
+    }
+  }, [commande, polling]);
+
+  const fetchCommande = async () => {
+    try {
+      const data = await getCommande(ref!);
+      setCommande(data);
+    } catch {
+      setError('Commande introuvable');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copy = (key: string, value: string) => {
+    navigator.clipboard?.writeText(value).catch(() => {});
+    setCopied(key);
+    setTimeout(() => setCopied(null), 2000);
+  };
+
+  const copyAll = () => {
+    if (!commande?.ticket) return;
+    copy('all', `Reseau: NetPass-WiFi\nUtilisateur: ${commande.ticket.username}\nMot de passe: ${commande.ticket.password}`);
+  };
+
+  // Générer QR visuel simple
+  const QRCode = () => {
+    const cells = Array.from({ length: 100 }, (_, i) => {
+      const seed = (i * 2654435761) % 100;
+      return seed > 40;
+    });
+    return (
+      <div className="w-32 h-32 bg-white rounded-xl p-2 grid"
+        style={{ gridTemplateColumns: 'repeat(10, 1fr)', gap: '1.5px' }}>
+        {cells.map((filled, i) => (
+          <div key={i} className="rounded-[1px]"
+            style={{ background: filled ? '#000' : '#fff', aspectRatio: '1' }} />
+        ))}
+      </div>
+    );
+  };
+
+  if (loading) return (
+    <div className="min-h-screen bg-[#0f0f0f] flex items-center justify-center">
+      <div className="text-center">
+        <div className="w-14 h-14 border-2 border-blue-600/30 border-t-blue-500 rounded-full animate-spin mx-auto mb-5" />
+        <p className="text-white font-medium">Chargement de votre ticket...</p>
+      </div>
+    </div>
+  );
+
+  if (error) return (
+    <div className="min-h-screen bg-[#0f0f0f] flex items-center justify-center px-6">
+      <div className="text-center max-w-sm">
+        <div className="w-14 h-14 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-5">
+          <AlertCircle size={24} className="text-red-400" />
+        </div>
+        <p className="text-white font-semibold mb-2">Erreur</p>
+        <p className="text-zinc-500 text-sm mb-6">{error}</p>
+        <a href="/forfaits" className="btn-primary">Retour aux forfaits</a>
+      </div>
+    </div>
+  );
+
+  // Paiement en attente ou en traitement
+  if (commande && !commande.ticket) {
+    if (commande.statut === 'en_attente') return (
+      <div className="min-h-screen bg-[#0f0f0f] flex items-center justify-center px-6">
+        <div className="text-center">
+          <div className="w-14 h-14 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto mb-5">
+            <AlertCircle size={24} className="text-amber-400" />
+          </div>
+          <p className="text-white font-semibold mb-2">Paiement en attente</p>
+          <p className="text-zinc-500 text-sm mb-6">Le paiement n'a pas encore ete confirme.<br/>Si vous avez paye, votre ticket arrivera sous peu.</p>
+          <button onClick={fetchCommande} className="btn-primary">Verifier le statut</button>
+        </div>
+      </div>
+    );
+
+    if (commande.statut === 'en_traitement') return (
+      <div className="min-h-screen bg-[#0f0f0f] flex items-center justify-center px-6">
+        <div className="text-center">
+          <div className="w-14 h-14 border-2 border-blue-600/30 border-t-blue-500 rounded-full animate-spin mx-auto mb-5" />
+          <p className="text-white font-semibold mb-2">Creation du ticket en cours</p>
+          <p className="text-zinc-500 text-sm">Paiement confirme. Generation des identifiants...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const ticket = commande?.ticket;
+  const expDate = ticket ? new Date(ticket.date_expiration) : null;
 
   return (
     <div className="min-h-screen bg-[#0f0f0f] text-white">
       <Navbar />
+      {/* Grid bg */}
+      <div className="fixed inset-0 pointer-events-none opacity-[0.025]"
+        style={{ backgroundImage: `linear-gradient(rgba(37,99,235,0.6) 1px,transparent 1px),linear-gradient(90deg,rgba(37,99,235,0.6) 1px,transparent 1px)`, backgroundSize: '60px 60px' }} />
 
-      {/* ── HERO ── */}
-      <section className="relative min-h-screen flex items-center justify-center overflow-hidden px-6 pt-16">
-        {/* Grid background */}
-        <div className="absolute inset-0 pointer-events-none"
-          style={{
-            backgroundImage: `linear-gradient(rgba(37,99,235,0.04) 1px,transparent 1px),
-              linear-gradient(90deg,rgba(37,99,235,0.04) 1px,transparent 1px)`,
-            backgroundSize: '60px 60px'
-          }}
-        />
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/5 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-blue-400/3 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 max-w-4xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-blue-500/30
-            bg-blue-500/5 text-blue-400 text-xs font-medium mb-8 backdrop-blur-sm">
-            <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-            Plateforme active — connexion instantanee
+      <div className="relative z-10 max-w-md mx-auto px-6 pt-24 pb-20">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <div className="w-12 h-12 rounded-2xl bg-emerald-500/12 border border-emerald-500/25 flex items-center justify-center mx-auto mb-4">
+            <CheckCircle size={22} className="text-emerald-400" />
           </div>
-
-          <h1 className="text-5xl md:text-7xl font-bold leading-[1.04] tracking-tight mb-6">
-            <span className="text-white">Acces WiFi</span><br />
-            <span className="bg-gradient-to-r from-blue-400 via-blue-300 to-blue-200 bg-clip-text text-transparent">
-              instantane et automatise
-            </span>
-          </h1>
-
-          <p className="text-zinc-400 text-lg md:text-xl max-w-2xl mx-auto mb-12 leading-relaxed font-light">
-            Payez avec Wave et connectez-vous immediatement grace a une gestion intelligente des tickets WiFi.
-          </p>
-
-          <div className="flex items-center justify-center gap-4 flex-wrap">
-            <button onClick={() => router.push('/forfaits')}
-              className="btn-primary text-base px-7 py-3.5 rounded-xl group">
-              Acheter maintenant
-              <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
-            </button>
-            <button onClick={() => router.push('/forfaits')}
-              className="btn-ghost text-base px-7 py-3.5 rounded-xl">
-              Voir les forfaits <ChevronRight size={16} />
-            </button>
-          </div>
-
-          {/* Sites disponibles */}
-          {routeurs.length > 0 && (
-            <div className="mt-10 flex items-center justify-center gap-3 flex-wrap">
-              <span className="text-zinc-600 text-xs">Disponible sur :</span>
-              {routeurs.map(r => (
-                <span key={r.id} className="px-3 py-1 rounded-full border border-white/8 text-zinc-400 text-xs">
-                  <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 ${r.statut === 'actif' ? 'bg-emerald-400' : 'bg-red-400'}`} />
-                  {r.site}
-                </span>
-              ))}
-            </div>
-          )}
+          <h1 className="text-2xl font-bold mb-1">Ticket WiFi genere</h1>
+          <p className="text-zinc-500 text-sm">Vos identifiants de connexion sont prets.</p>
         </div>
-      </section>
 
-      {/* ── STATS ── */}
-      <div className="border-y border-white/6 py-16 px-6">
-        <div className="max-w-5xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
-          {[
-            { label: 'Utilisateurs connectes', value: '247+' },
-            { label: 'Tickets generes', value: '14,820+' },
-            { label: 'Uptime reseau', value: '99.9%' },
-            { label: 'Vitesse moyenne', value: '48 Mbps' },
-          ].map(({ label, value }) => (
-            <div key={label}>
-              <div className="text-3xl md:text-4xl font-bold text-white mb-2">{value}</div>
-              <div className="text-zinc-500 text-sm">{label}</div>
-            </div>
-          ))}
-        </div>
-      </div>
+        {/* Ticket Card */}
+        <div className="rounded-2xl border border-blue-500/20 overflow-hidden shadow-[0_0_60px_rgba(37,99,235,0.1)]"
+          style={{ background: 'linear-gradient(145deg,#141414 0%,#0c1526 100%)' }}>
 
-      {/* ── ETAPES ── */}
-      <section className="py-24 px-6 bg-[#0a0a0a]" id="fonctionnement">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">Connexion en 4 etapes</h2>
-            <p className="text-zinc-500 max-w-lg mx-auto">Un processus simplifie pour vous connecter en moins d'une minute.</p>
-          </div>
-          <div className="grid md:grid-cols-4 gap-6">
-            {[
-              { icon: Package, label: 'Choisir un forfait', desc: 'Selectionnez la duree et la vitesse adaptees.' },
-              { icon: CreditCard, label: 'Payer avec Wave', desc: 'Paiement securise en quelques secondes.' },
-              { icon: Ticket, label: 'Recevoir le ticket', desc: 'Vos identifiants sont generes instantanement.' },
-              { icon: Wifi, label: 'Se connecter', desc: 'Connectez-vous au WiFi avec vos identifiants.' },
-            ].map(({ icon: Icon, label, desc }, i) => (
-              <div key={i} className="flex flex-col items-center text-center">
-                <div className="relative w-20 h-20 rounded-2xl bg-[#141414] border border-white/8
-                  flex items-center justify-center mb-5 hover:border-blue-500/40
-                  hover:shadow-[0_0_20px_rgba(37,99,235,0.15)] transition-all group">
-                  <Icon size={22} className="text-blue-400 group-hover:text-blue-300 transition-colors" />
-                  <div className="absolute -top-2.5 -right-2.5 w-6 h-6 rounded-full bg-[#0f0f0f]
-                    border border-white/10 flex items-center justify-center text-xs text-zinc-500 font-semibold">
-                    {i + 1}
-                  </div>
-                </div>
-                <h3 className="text-white font-semibold text-sm mb-2">{label}</h3>
-                <p className="text-zinc-500 text-xs leading-relaxed">{desc}</p>
+          {/* Top bar */}
+          <div className="px-5 py-4 border-b border-white/6 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-lg bg-blue-600/20 flex items-center justify-center">
+                <Wifi size={13} className="text-blue-400" />
               </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── FORFAITS PREVIEW ── */}
-      <section className="py-24 px-6">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">Forfaits disponibles</h2>
-            <p className="text-zinc-500">Choisissez le forfait qui correspond a vos besoins.</p>
-          </div>
-          {forfaits.length > 0 ? (
-            <div className="grid md:grid-cols-4 gap-4">
-              {forfaits.map((plan, i) => (
-                <div key={plan.id}
-                  className={`relative rounded-2xl border p-5 flex flex-col transition-all duration-300
-                    hover:-translate-y-1 cursor-pointer
-                    ${i === 1 ? 'border-blue-500/50 bg-gradient-to-b from-blue-600/8 to-transparent shadow-[0_0_40px_rgba(37,99,235,0.12)]'
-                    : 'border-white/8 bg-[#141414] hover:border-white/15'}`}
-                  onClick={() => router.push('/forfaits')}>
-                  {i === 1 && (
-                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full
-                      bg-blue-600 text-xs font-semibold shadow-[0_0_20px_rgba(37,99,235,0.5)]">
-                      Populaire
-                    </div>
-                  )}
-                  <div className="mb-4">
-                    <p className="text-zinc-500 text-xs font-semibold uppercase tracking-widest mb-1">{plan.nom}</p>
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-2xl font-bold">{plan.prix.toLocaleString('fr')}</span>
-                      <span className="text-zinc-500 text-xs">FCFA</span>
-                    </div>
-                    <div className="flex items-center gap-1 mt-1">
-                      <Zap size={11} className="text-blue-400" />
-                      <span className="text-blue-400 text-xs">{plan.vitesse}</span>
-                    </div>
-                  </div>
-                  <button className={`w-full py-2.5 rounded-xl text-xs font-medium mt-auto transition-all
-                    ${i === 1 ? 'bg-blue-600 hover:bg-blue-500 text-white' : 'border border-white/10 text-zinc-300 hover:border-white/20'}`}>
-                    Acheter
-                  </button>
-                </div>
-              ))}
+              <div>
+                <p className="text-white text-sm font-semibold">NetPass Pro</p>
+                <p className="text-zinc-500 text-xs">NetPass-WiFi — {commande?.site}</p>
+              </div>
             </div>
-          ) : (
-            <div className="text-center text-zinc-600 py-12">Chargement des forfaits...</div>
-          )}
-        </div>
-      </section>
-
-      {/* ── FOOTER ── */}
-      <footer className="border-t border-white/6 py-10 px-6">
-        <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-blue-600/20 flex items-center justify-center">
-              <Wifi size={14} className="text-blue-400" />
-            </div>
-            <span className="text-zinc-500 text-sm">NetPass Pro — Plateforme WiFi intelligente</span>
+            <span className="badge-active">Actif</span>
           </div>
-          <p className="text-zinc-600 text-xs">Infrastructure propulsee par MikroTik</p>
+
+          <div className="px-5 py-5 space-y-3">
+            {/* Username */}
+            <div className="flex items-center justify-between bg-white/3 border border-white/6 rounded-xl px-4 py-3">
+              <div>
+                <p className="text-zinc-500 text-xs mb-0.5">Nom d'utilisateur</p>
+                <p className="text-white font-mono font-semibold text-base">{ticket?.username}</p>
+              </div>
+              <button onClick={() => copy('user', ticket?.username)} className="text-zinc-500 hover:text-blue-400 transition-colors p-1">
+                {copied === 'user' ? <CheckCircle size={14} className="text-emerald-400" /> : <Copy size={14} />}
+              </button>
+            </div>
+
+            {/* Password */}
+            <div className="flex items-center justify-between bg-white/3 border border-white/6 rounded-xl px-4 py-3">
+              <div>
+                <p className="text-zinc-500 text-xs mb-0.5">Mot de passe</p>
+                <p className="text-white font-mono font-semibold text-base tracking-wider">{ticket?.password}</p>
+              </div>
+              <button onClick={() => copy('pass', ticket?.password)} className="text-zinc-500 hover:text-blue-400 transition-colors p-1">
+                {copied === 'pass' ? <CheckCircle size={14} className="text-emerald-400" /> : <Copy size={14} />}
+              </button>
+            </div>
+
+            {/* QR Code */}
+            <div className="flex justify-center py-2"><QRCode /></div>
+
+            {/* Meta */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-white/3 border border-white/6 rounded-xl px-3 py-2.5 text-center">
+                <p className="text-zinc-500 text-xs mb-1">Forfait</p>
+                <p className="text-white font-semibold text-sm">{commande?.forfait?.nom}</p>
+              </div>
+              <div className="bg-white/3 border border-white/6 rounded-xl px-3 py-2.5 text-center">
+                <p className="text-zinc-500 text-xs mb-1">Vitesse</p>
+                <p className="text-white font-semibold text-sm">{commande?.forfait?.vitesse}</p>
+              </div>
+            </div>
+
+            <div className="bg-white/3 border border-white/6 rounded-xl px-4 py-3 text-center">
+              <p className="text-zinc-500 text-xs mb-1">Expiration</p>
+              <p className="text-white text-sm font-medium">
+                {expDate?.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })} a {expDate?.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+              </p>
+            </div>
+
+            {/* Actions */}
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <button onClick={copyAll}
+                className="flex items-center justify-center gap-2 py-3 rounded-xl border border-white/10 hover:border-white/20 text-zinc-300 text-sm transition-all">
+                {copied === 'all' ? <CheckCircle size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                {copied === 'all' ? 'Copie !' : 'Tout copier'}
+              </button>
+              <button className="flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm transition-all shadow-[0_4px_20px_rgba(37,99,235,0.3)]">
+                <Download size={13} /> Telecharger
+              </button>
+            </div>
+          </div>
         </div>
-      </footer>
+
+        {/* Warning */}
+        <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 flex gap-3">
+          <AlertCircle size={14} className="text-amber-400 flex-shrink-0 mt-0.5" />
+          <p className="text-amber-400/80 text-xs leading-relaxed">
+            Connectez-vous au reseau <strong className="text-amber-400">NetPass-WiFi</strong> puis saisissez vos identifiants sur la page qui s'affiche.
+          </p>
+        </div>
+
+        <a href="/" className="w-full mt-4 py-3 rounded-xl border border-white/8 text-zinc-500 hover:text-zinc-300 text-sm transition-colors block text-center">
+          Retour a l'accueil
+        </a>
+      </div>
     </div>
+  );
+}
+
+export default function TicketPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#0f0f0f] flex items-center justify-center">
+        <div className="w-14 h-14 border-2 border-blue-600/30 border-t-blue-500 rounded-full animate-spin" />
+      </div>
+    }>
+      <TicketContent />
+    </Suspense>
   );
 }
