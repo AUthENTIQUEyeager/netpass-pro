@@ -1,6 +1,8 @@
 import { Suspense } from 'react';
 import TicketContent from './TicketContent';
 
+export const dynamic = 'force-dynamic'; // ← ça suffit
+
 export default function TicketPage() {
   return (
     <Suspense fallback={
