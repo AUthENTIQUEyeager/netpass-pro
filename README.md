@@ -1,220 +1,132 @@
-# NetPass Pro — Plateforme WiFi Intelligente
+# NetPass Pro — Déploiement Public
 
-Plateforme complète de vente de tickets WiFi Hotspot connectée à MikroTik.
-Paiement via Wave Business, gestion multi-routeurs, dashboard administrateur.
-
----
-
-## Stack technique
-
-| Couche | Technologie | Hébergement |
-|---|---|---|
-| Frontend | Next.js 14 + Tailwind | Vercel (gratuit) |
-| Backend | Node.js + Express | Render (gratuit) |
-| Base de données | PostgreSQL + Prisma | Supabase (gratuit) |
-| Paiement | Wave Business API | — |
-| Routeur | MikroTik RouterOS API | Sur site |
+Plateforme de tickets WiFi automatisés (MikroTik + Wave + Vercel + Render + Supabase).
 
 ---
 
-## Installation locale
+## Architecture
 
-### 1. Cloner le projet
-```bash
-git clone https://github.com/ton-compte/netpass-pro.git
-cd netpass-pro
 ```
-
-### 2. Backend
-```bash
-cd backend
-npm install
-
-# Copier le fichier d'environnement
-cp .env.example .env
-# Remplir les variables dans .env
-
-# Générer le client Prisma
-npx prisma generate
-
-# Créer les tables en base
-npx prisma migrate dev --name init
-
-# Démarrer en développement
-npm run dev
-```
-
-### 3. Frontend
-```bash
-cd frontend
-npm install
-
-# Copier le fichier d'environnement
-cp .env.local.example .env.local
-# Remplir NEXT_PUBLIC_API_URL
-
-# Démarrer en développement
-npm run dev
-```
-
-### 4. Créer le premier admin
-```bash
-curl -X POST http://localhost:3001/api/auth/setup \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@netpass.pro","password":"motdepasse","nom":"Administrateur"}'
-```
-
-### 5. Ajouter les forfaits par défaut
-```bash
-curl -X POST http://localhost:3001/api/forfaits \
-  -H "Authorization: Bearer TON_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"nom":"1 Heure","duree_heures":1,"prix":500,"vitesse":"10 Mbps","description":"Connexion immediate,1 appareil,Support inclus"}'
+GitHub (ce repo)
+  ├── frontend/   → Vercel  (Next.js)
+  └── backend/    → Render  (Node.js + Express)
+                       └── Supabase (PostgreSQL)
 ```
 
 ---
 
-## Déploiement production
+## Déploiement étape par étape
 
-### Étape 1 — Supabase (Base de données)
+### 1. Base de données — Supabase
 
-1. Créer un compte sur supabase.com
-2. Créer un nouveau projet
-3. Aller dans Settings > Database
-4. Copier l'URL de connexion (URI)
-5. La coller dans DATABASE_URL de ton backend
+1. Créer un compte sur [supabase.com](https://supabase.com)
+2. Nouveau projet → notez le **mot de passe** de la BDD
+3. Aller dans **Settings → Database → Connection string → URI**
+4. Copier l'URL (format `postgresql://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres`)
 
-### Étape 2 — Render (Backend)
+---
 
-1. Créer un compte sur render.com
-2. New > Web Service
-3. Connecter ton repo GitHub
-4. Paramètres :
-   - Build Command: `npm install && npx prisma generate && npx prisma migrate deploy`
-   - Start Command: `npm start`
-   - Root Directory: `backend`
-5. Ajouter toutes les variables d'environnement
+### 2. Backend — Render
 
-### Étape 3 — Vercel (Frontend)
-
-1. Créer un compte sur vercel.com
-2. Import depuis GitHub
-3. Root Directory: `frontend`
+1. Créer un compte sur [render.com](https://render.com)
+2. **New → Web Service** → connecter ce repo GitHub
+3. Paramètres :
+   - **Root Directory** : `backend`
+   - **Build Command** : `npm install && npm run build`
+   - **Start Command** : `npm start`
+   - **Environment** : Node
 4. Ajouter les variables d'environnement :
-   - NEXT_PUBLIC_API_URL = URL de ton service Render
 
-### Étape 4 — Wave Business
+| Variable | Valeur |
+|----------|--------|
+| `DATABASE_URL` | URL Supabase copiée à l'étape 1 |
+| `JWT_SECRET` | Chaîne aléatoire de 64 caractères |
+| `WAVE_API_KEY` | Votre clé Wave (`wave_sn_prod_...`) |
+| `WAVE_WEBHOOK_SECRET` | Votre secret Wave webhook |
+| `FRONTEND_URL` | `https://votre-app.vercel.app` *(mettre à jour après étape 3)* |
+| `PORT` | `3001` |
 
-1. Créer un compte Wave Business
-2. Demander l'accès API à Wave
-3. Récupérer ta clé API et ton secret webhook
-4. Dans le dashboard Wave, configurer l'URL webhook :
-   `https://ton-api.onrender.com/webhooks/wave`
-
-### Étape 5 — MikroTik
-
-Sur ton routeur MikroTik, activer l'API :
-```
-/ip service enable api
-/ip service set api port=8728
-```
-
-Créer un utilisateur API dédié :
-```
-/user add name=netpass-api password=motdepasse group=full
-```
+5. Déployer → notez l'URL du service (ex: `https://netpass-pro-api.onrender.com`)
+6. Aller dans **Settings → Deploy Hook** → copier l'URL du hook
 
 ---
 
-## Variables d'environnement
+### 3. Frontend — Vercel
 
-### Backend (.env)
+1. Créer un compte sur [vercel.com](https://vercel.com)
+2. **New Project** → importer ce repo GitHub
+3. Paramètres :
+   - **Root Directory** : `frontend`
+   - **Framework** : Next.js (détecté automatiquement)
+4. Ajouter la variable d'environnement :
+
+| Variable | Valeur |
+|----------|--------|
+| `NEXT_PUBLIC_API_URL` | URL Render de l'étape 2 |
+
+5. Déployer → notez l'URL (ex: `https://netpass-pro.vercel.app`)
+6. **Retourner sur Render** et mettre à jour `FRONTEND_URL` avec cette URL Vercel
+
+---
+
+### 4. GitHub Secrets (pour le déploiement automatique)
+
+Dans votre repo GitHub → **Settings → Secrets → Actions** :
+
+| Secret | Valeur |
+|--------|--------|
+| `RENDER_DEPLOY_HOOK_URL` | URL du deploy hook Render (étape 2.6) |
+
+---
+
+### 5. Webhook Wave
+
+Dans votre dashboard Wave → Webhooks :
+- **URL** : `https://votre-backend.onrender.com/webhooks/wave`
+- **Events** : `checkout.session.completed`
+
+---
+
+### 6. Premier admin
+
+Après le premier déploiement, créer votre compte admin :
+
+```bash
+curl -X POST https://votre-backend.onrender.com/api/auth/setup \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@votredomaine.com","password":"MotDePasseSecurise!","nom":"Admin"}'
 ```
-DATABASE_URL=postgresql://...supabase...
-JWT_SECRET=cle_aleatoire_64_caracteres
+
+Ou via l'interface : aller sur `https://votre-app.vercel.app/admin/login` → utiliser `/api/auth/setup`.
+
+---
+
+## Mise à jour (après le premier déploiement)
+
+```bash
+git add .
+git commit -m "description des changements"
+git push origin main
+```
+
+→ Vercel redéploie le frontend automatiquement.  
+→ GitHub Actions déclenche le redéploiement Render via le webhook.
+
+---
+
+## Variables d'environnement résumé
+
+### Backend (Render)
+```env
+DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres
+JWT_SECRET=votre_cle_secrete_de_64_caracteres
 WAVE_API_KEY=wave_sn_prod_xxxxxxxxxxxx
 WAVE_WEBHOOK_SECRET=whsec_xxxxxxxxxxxx
-FRONTEND_URL=https://ton-site.vercel.app
+FRONTEND_URL=https://votre-app.vercel.app
 PORT=3001
 ```
 
-### Frontend (.env.local)
+### Frontend (Vercel)
+```env
+NEXT_PUBLIC_API_URL=https://votre-backend.onrender.com
 ```
-NEXT_PUBLIC_API_URL=https://ton-api.onrender.com
-NEXT_PUBLIC_APP_NAME=NetPass Pro
-```
-
----
-
-## Structure du projet
-
-```
-netpass-pro/
-├── backend/
-│   ├── src/
-│   │   ├── index.js              Point d'entrée Express
-│   │   ├── routes/
-│   │   │   ├── auth.js           Login admin JWT
-│   │   │   ├── commandes.js      Créer commande + Wave
-│   │   │   ├── tickets.js        Gestion tickets
-│   │   │   ├── forfaits.js       CRUD forfaits
-│   │   │   ├── routeurs.js       CRUD routeurs MikroTik
-│   │   │   └── stats.js          Statistiques dashboard
-│   │   ├── services/
-│   │   │   ├── mikrotik.js       RouterOS API
-│   │   │   └── wave.js           Wave Payment API
-│   │   ├── webhooks/
-│   │   │   └── wave.js           Réception paiement confirmé
-│   │   └── middlewares/
-│   │       ├── auth.js           Vérification JWT
-│   │       └── errorHandler.js
-│   └── prisma/
-│       └── schema.prisma         Schéma base de données
-│
-└── frontend/
-    ├── app/
-    │   ├── page.tsx              Landing page
-    │   ├── forfaits/page.tsx     Choix du forfait
-    │   ├── ticket/page.tsx       Affichage ticket
-    │   └── admin/
-    │       ├── page.tsx          Dashboard overview
-    │       ├── tickets/          Gestion tickets
-    │       ├── utilisateurs/     Clients connectés
-    │       ├── paiements/        Historique Wave
-    │       ├── forfaits/         Gestion forfaits
-    │       ├── routeurs/         Gestion MikroTik
-    │       └── parametres/       Configuration
-    ├── components/
-    │   └── ui/Navbar.tsx
-    └── lib/api.ts                Appels backend
-```
-
----
-
-## Flux de paiement complet
-
-```
-1. Client choisit forfait + site
-2. POST /api/commandes → crée commande en BDD
-3. Backend appelle Wave API → reçoit checkout_url
-4. Client redirigé vers Wave pour payer
-5. Wave confirme → POST /webhooks/wave
-6. Backend vérifie signature HMAC
-7. Backend crée utilisateur dans MikroTik via RouterOS API
-8. Ticket enregistré en BDD
-9. Client redirigé vers /ticket?ref=ID
-10. Client se connecte au WiFi avec ses identifiants
-11. MikroTik expire automatiquement après la durée
-```
-
----
-
-## Coût mensuel
-
-| Service | Plan | Coût |
-|---|---|---|
-| Vercel | Hobby | 0 FCFA |
-| Render | Free | 0 FCFA |
-| Supabase | Free | 0 FCFA |
-| Wave API | — | 0 FCFA + ~1% commission |
-| **Total** | | **0 FCFA/mois** |

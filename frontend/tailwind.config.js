@@ -10,6 +10,9 @@ module.exports = {
         sans: ['var(--font-sans)', 'DM Sans', 'sans-serif'],
         mono: ['var(--font-mono)', 'DM Mono', 'monospace'],
       },
+      colors: {
+        border: 'rgba(255,255,255,0.08)',
+      }
     },
   },
   plugins: [],

@@ -21,9 +21,9 @@ app.use('/webhooks', express.raw({ type: 'application/json' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Rate limiting sur les routes publiques
+// Rate limiting
 const publicLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 100,
   message: { error: 'Trop de requêtes. Réessayez dans 15 minutes.' }
 });
@@ -61,7 +61,6 @@ app.listen(PORT, async () => {
   console.log(`║   NetPass Pro API — Port ${PORT}   ║`);
   console.log(`╚══════════════════════════════════╝\n`);
 
-  // Test connexion routeurs au démarrage
   console.log('Vérification des routeurs MikroTik...');
   await testAllRouters();
 });

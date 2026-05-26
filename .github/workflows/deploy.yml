@@ -1,0 +1,25 @@
+name: Deploy NetPass Pro
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  # ── BACKEND — déclenche Render via webhook ────────────────────────────────
+  deploy-backend:
+    name: Deploy Backend (Render)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render Deploy
+        run: |
+          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+
+  # ── FRONTEND — Vercel se déploie automatiquement sur push ─────────────────
+  # Vercel détecte le push sur main et déploie sans action supplémentaire.
+  # Ce job est optionnel — il sert juste à confirmer le déclenchement.
+  deploy-frontend:
+    name: Deploy Frontend (Vercel)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Frontend deploys automatically via Vercel Git Integration
+        run: echo "Vercel will auto-deploy from GitHub push."

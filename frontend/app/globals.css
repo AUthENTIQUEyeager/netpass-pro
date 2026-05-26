@@ -4,6 +4,7 @@
 
 :root {
   --font-sans: 'DM Sans', sans-serif;
+  --font-mono: 'DM Mono', monospace;
   --bg: #0f0f0f;
   --bg2: #141414;
   --bg3: #1a1a1a;
@@ -25,7 +26,7 @@ body {
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
 
-.font-mono { font-family: 'Courier New', monospace !important; }
+.font-mono { font-family: var(--font-mono) !important; }
 
 @layer components {
   .gcard {

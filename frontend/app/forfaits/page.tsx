@@ -1,15 +1,20 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { CheckCircle, Zap, Shield, Star } from 'lucide-react';
-import { getForfaits, getRouteurs, creerCommande } from '@/lib/api';
+import { CheckCircle, Zap, Shield, Star, X, Phone, Search } from 'lucide-react';
+import { getForfaits, getRouteurs } from '@/lib/api';
+import API from '@/lib/api';
 import Navbar from '@/components/ui/Navbar';
+import Link from 'next/link';
 
 export default function ForfaitsPage() {
   const [forfaits, setForfaits] = useState<any[]>([]);
   const [routeurs, setRouteurs] = useState<any[]>([]);
   const [selectedRouteur, setSelectedRouteur] = useState('');
-  const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [showPopup, setShowPopup] = useState(false);
+  const [selectedForfait, setSelectedForfait] = useState<any>(null);
+  const [clientTel, setClientTel] = useState('');
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     getForfaits().then(setForfaits).catch(() => setError('Erreur chargement forfaits'));
@@ -19,23 +24,29 @@ export default function ForfaitsPage() {
     }).catch(() => {});
   }, []);
 
-  const handleAchat = async (forfait: any) => {
-    if (!selectedRouteur) {
-      setError('Veuillez selectionner un site WiFi');
-      return;
-    }
-    setLoading(forfait.id);
+  const handleAchat = (forfait: any) => {
+    if (!selectedRouteur) { setError('Veuillez sélectionner un site WiFi'); return; }
     setError('');
+    setSelectedForfait(forfait);
+    setClientTel('');
+    setShowPopup(true);
+  };
+
+  const handleConfirmerPaiement = async () => {
+    if (!clientTel || clientTel.length < 8) return;
+    setLoading(true);
     try {
-      const result = await creerCommande({
-        forfait_id: forfait.id,
-        routeur_id: selectedRouteur
-      });
-      // Rediriger vers Wave pour le paiement
-      window.location.href = result.checkout_url;
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Erreur lors de la creation de la commande');
-      setLoading(null);
+      const data = await API.post('/api/commandes', {
+        forfait_id: selectedForfait.id,
+        routeur_id: selectedRouteur,
+        client_tel: clientTel
+      }).then(r => r.data);
+
+      // Redirect to Wave checkout URL returned by backend
+      window.location.href = data.checkout_url;
+    } catch (e: any) {
+      setLoading(false);
+      setError(e.response?.data?.error || 'Erreur lors de la création de la commande');
     }
   };
 
@@ -46,22 +57,15 @@ export default function ForfaitsPage() {
 
         <div className="text-center mb-14">
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-4">Choisissez votre forfait</h1>
-          <p className="text-zinc-500 text-lg font-light">Connexion immediate apres paiement Wave. Sans inscription.</p>
+          <p className="text-zinc-500 text-lg font-light">Payez avec Wave, recevez votre ticket instantanément.</p>
         </div>
 
-        {/* Sélecteur de site */}
         {routeurs.length > 1 && (
           <div className="mb-10 max-w-sm mx-auto">
-            <label className="block text-xs text-zinc-500 font-medium mb-2 uppercase tracking-widest">
-              Site WiFi
-            </label>
-            <select
-              value={selectedRouteur}
-              onChange={e => setSelectedRouteur(e.target.value)}
-              className="form-input"
-              style={{ background: '#141414' }}
-            >
-              <option value="">Selectionnez un site</option>
+            <label className="block text-xs text-zinc-500 font-medium mb-2 uppercase tracking-widest">Site WiFi</label>
+            <select value={selectedRouteur} onChange={e => setSelectedRouteur(e.target.value)}
+              className="form-input" style={{ background: '#141414' }}>
+              <option value="">Sélectionnez un site</option>
               {routeurs.map(r => (
                 <option key={r.id} value={r.id} disabled={r.statut !== 'actif'}>
                   {r.site} — {r.nom} {r.statut !== 'actif' ? '(Hors ligne)' : ''}
@@ -77,7 +81,6 @@ export default function ForfaitsPage() {
           </div>
         )}
 
-        {/* Grille forfaits */}
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-5">
           {forfaits.map((plan, i) => (
             <div key={plan.id}
@@ -109,7 +112,7 @@ export default function ForfaitsPage() {
               </div>
 
               <ul className="space-y-2.5 flex-1 mb-6">
-                {(plan.description ? plan.description.split(',') : [`${plan.duree_heures}h de connexion`, 'Connexion immediate', 'Support inclus']).map((f: string, fi: number) => (
+                {(plan.description ? plan.description.split(',') : [`${plan.duree_heures}h de connexion`, 'Ticket instantané', 'Support inclus']).map((f: string, fi: number) => (
                   <li key={fi} className="flex items-start gap-2 text-zinc-400 text-sm">
                     <CheckCircle size={13} className="text-blue-500 flex-shrink-0 mt-0.5" />
                     {f.trim()}
@@ -117,32 +120,77 @@ export default function ForfaitsPage() {
                 ))}
               </ul>
 
-              <button
-                onClick={() => handleAchat(plan)}
-                disabled={loading === plan.id}
+              <button onClick={() => handleAchat(plan)}
                 className={`w-full py-3 rounded-xl text-sm font-medium transition-all duration-200
                   ${i === 1
-                    ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-[0_4px_20px_rgba(37,99,235,0.4)] disabled:opacity-60'
-                    : 'bg-white/5 hover:bg-white/10 text-white border border-white/10 hover:border-white/20 disabled:opacity-60'}`}>
-                {loading === plan.id ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <div className="w-3.5 h-3.5 border border-white/30 border-t-white rounded-full animate-spin" />
-                    Redirection Wave...
-                  </span>
-                ) : 'Payer avec Wave'}
+                    ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-[0_4px_20px_rgba(37,99,235,0.4)]'
+                    : 'bg-white/5 hover:bg-white/10 text-white border border-white/10 hover:border-white/20'}`}>
+                Payer avec Wave
               </button>
             </div>
           ))}
         </div>
 
-        <div className="mt-10 rounded-2xl border border-white/6 bg-[#141414] p-5 flex items-center gap-4 max-w-xl mx-auto">
-          <Shield size={26} className="text-blue-400 flex-shrink-0" />
-          <div>
-            <p className="text-white text-sm font-semibold mb-1">Paiement 100% securise via Wave</p>
-            <p className="text-zinc-500 text-xs">Ticket delivre instantanement apres confirmation du paiement.</p>
+        <div className="mt-10 flex flex-col sm:flex-row gap-4 max-w-xl mx-auto">
+          <div className="flex-1 rounded-2xl border border-white/6 bg-[#141414] p-5 flex items-center gap-4">
+            <Shield size={26} className="text-blue-400 flex-shrink-0" />
+            <div>
+              <p className="text-white text-sm font-semibold mb-1">Paiement sécurisé via Wave</p>
+              <p className="text-zinc-500 text-xs">Votre ticket vous sera envoyé après confirmation.</p>
+            </div>
           </div>
+
+          <Link href="/mon-ticket"
+            className="flex items-center justify-center gap-2 px-6 rounded-2xl border border-blue-500/20 bg-blue-600/5 hover:bg-blue-600/10 text-blue-400 text-sm font-medium transition-all">
+            <Search size={15} />
+            Récupérer mon ticket
+          </Link>
         </div>
       </div>
+
+      {/* POPUP NUMÉRO */}
+      {showPopup && selectedForfait && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-6">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowPopup(false)} />
+          <div className="relative z-10 w-full max-w-sm bg-[#141414] border border-white/10 rounded-2xl p-6">
+            <button onClick={() => setShowPopup(false)}
+              className="absolute top-4 right-4 text-zinc-600 hover:text-zinc-300 transition-colors">
+              <X size={16} />
+            </button>
+
+            <div className="mb-5">
+              <p className="text-white font-semibold text-sm mb-1">Avant de payer</p>
+              <p className="text-zinc-500 text-xs">
+                Laissez votre numéro pour récupérer votre ticket après paiement.
+              </p>
+            </div>
+
+            <div className="bg-white/3 border border-white/6 rounded-xl px-4 py-3 mb-5">
+              <div className="flex justify-between items-center">
+                <div>
+                  <p className="text-white text-sm font-semibold">{selectedForfait.nom}</p>
+                  <p className="text-zinc-500 text-xs">{selectedForfait.vitesse} — {selectedForfait.duree_heures}h</p>
+                </div>
+                <span className="text-white font-bold text-sm">{selectedForfait.prix.toLocaleString('fr')} F</span>
+              </div>
+            </div>
+
+            <div className="mb-5">
+              <label className="block text-xs text-zinc-500 mb-2 flex items-center gap-1.5">
+                <Phone size={11} /> Votre numéro WhatsApp
+              </label>
+              <input type="tel" placeholder="ex: 77 123 45 67" value={clientTel}
+                onChange={e => setClientTel(e.target.value)}
+                className="form-input" autoFocus />
+            </div>
+
+            <button onClick={handleConfirmerPaiement} disabled={loading || clientTel.length < 8}
+              className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium transition-all">
+              {loading ? 'Redirection...' : 'Continuer vers Wave →'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

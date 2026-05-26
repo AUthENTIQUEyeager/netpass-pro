@@ -6,7 +6,7 @@ const { createHotspotUser, deleteHotspotUser, disconnectActiveUser, generateCred
 
 const prisma = new PrismaClient();
 
-// ── GET /api/tickets — Liste tous les tickets (admin) ─────────────────────────
+// ── GET /api/tickets ──────────────────────────────────────────────────────────
 router.get('/', auth, async (req, res) => {
   try {
     const { statut, routeur_id, search, page = 1, limit = 20 } = req.query;
@@ -15,6 +15,7 @@ router.get('/', auth, async (req, res) => {
     const where = {};
     if (statut) where.statut = statut;
     if (routeur_id) where.routeur_id = routeur_id;
+    // SQLite: pas de mode 'insensitive', on utilise contains simple
     if (search) {
       where.OR = [
         { username: { contains: search, mode: 'insensitive' } }
@@ -26,7 +27,7 @@ router.get('/', auth, async (req, res) => {
         where,
         include: {
           routeur: { select: { nom: true, site: true } },
-          commande: { select: { montant: true, type: true } }
+          commande: { select: { montant: true } }
         },
         orderBy: { date_creation: 'desc' },
         skip,
@@ -41,42 +42,41 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
-// ── POST /api/tickets/manuel — Générer un ticket manuellement (admin) ─────────
+// ── POST /api/tickets/manuel — Générer tickets manuellement (cash) ────────────
 router.post('/manuel', auth, async (req, res) => {
   try {
     const { forfait_id, routeur_id, quantite = 1 } = req.body;
 
-    if (quantite > 50) {
-      return res.status(400).json({ error: 'Maximum 50 tickets par génération' });
+    if (quantite > 200) {
+      return res.status(400).json({ error: 'Maximum 200 tickets par génération' });
     }
 
     const [forfait, routeur] = await Promise.all([
-      prisma.forfait.findUnique({ where: { id: forfait_id, actif: true } }),
+      prisma.forfait.findUnique({ where: { id: forfait_id } }),
       prisma.routeur.findUnique({ where: { id: routeur_id } })
     ]);
 
     if (!forfait) return res.status(404).json({ error: 'Forfait introuvable' });
     if (!routeur) return res.status(404).json({ error: 'Routeur introuvable' });
 
-    const ticketsCreés = [];
+    const ticketsCrees = [];
     const erreurs = [];
 
     for (let i = 0; i < quantite; i++) {
       try {
         const { username, password } = generateCredentials();
 
-        // Créer une commande "manuelle" fictive
         const commande = await prisma.commande.create({
           data: {
             forfait_id,
             routeur_id,
             montant: forfait.prix,
             statut: 'payé',
-            wave_ref: `MANUEL-${Date.now()}-${i}`
+            wave_ref: `CASH-${Date.now()}-${i}`
           }
         });
 
-        // Créer dans MikroTik
+        // Créer l'utilisateur dans MikroTik
         await createHotspotUser(routeur, {
           username,
           password,
@@ -98,13 +98,17 @@ router.post('/manuel', auth, async (req, res) => {
           }
         });
 
-        ticketsCreés.push({
+        ticketsCrees.push({
           id: ticket.id,
           username: ticket.username,
           password: ticket.password,
           date_expiration: ticket.date_expiration,
           forfait: forfait.nom,
-          site: routeur.site
+          duree: forfait.duree_heures,
+          prix: forfait.prix,
+          vitesse: forfait.vitesse,
+          site: routeur.site,
+          nom_reseau: routeur.nom
         });
       } catch (err) {
         erreurs.push({ index: i, error: err.message });
@@ -112,9 +116,9 @@ router.post('/manuel', auth, async (req, res) => {
     }
 
     res.json({
-      success: ticketsCreés.length,
+      success: ticketsCrees.length,
       erreurs: erreurs.length,
-      tickets: ticketsCreés
+      tickets: ticketsCrees
     });
 
   } catch (error) {
@@ -131,11 +135,9 @@ router.put('/:id/desactiver', auth, async (req, res) => {
     });
     if (!ticket) return res.status(404).json({ error: 'Ticket introuvable' });
 
-    // Supprimer de MikroTik
     await deleteHotspotUser(ticket.routeur, ticket.username);
     await disconnectActiveUser(ticket.routeur, ticket.username);
 
-    // Mettre à jour en base
     await prisma.ticket.update({
       where: { id: req.params.id },
       data: { statut: 'désactivé' }

@@ -31,6 +31,7 @@ model Forfait {
   prix         Int
   vitesse      String
   description  String?
+  wave_link    String?
   actif        Boolean    @default(true)
   created_at   DateTime   @default(now())
   updated_at   DateTime   @updatedAt
@@ -40,19 +41,19 @@ model Forfait {
 }
 
 model Commande {
-  id                String   @id @default(uuid())
-  forfait_id        String
-  routeur_id        String
-  montant           Int
-  statut            String   @default("en_attente")
-  wave_ref          String?
-  wave_checkout_id  String?
-  client_tel        String?
-  created_at        DateTime @default(now())
-  updated_at        DateTime @updatedAt
-  forfait           Forfait  @relation(fields: [forfait_id], references: [id])
-  routeur           Routeur  @relation(fields: [routeur_id], references: [id])
-  ticket            Ticket?
+  id               String   @id @default(uuid())
+  forfait_id       String
+  routeur_id       String
+  montant          Int
+  statut           String   @default("en_attente")
+  wave_ref         String?
+  wave_checkout_id String?
+  client_tel       String?
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+  forfait          Forfait  @relation(fields: [forfait_id], references: [id])
+  routeur          Routeur  @relation(fields: [routeur_id], references: [id])
+  ticket           Ticket?
 
   @@map("commandes")
 }
