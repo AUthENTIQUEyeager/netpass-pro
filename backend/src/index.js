@@ -62,7 +62,7 @@ app.listen(PORT, async () => {
   console.log(`╚══════════════════════════════════╝\n`);
 
   console.log('Vérification des routeurs MikroTik...');
-  await testAllRouters();
+  //await testAllRouters();
 });
 
 module.exports = app;

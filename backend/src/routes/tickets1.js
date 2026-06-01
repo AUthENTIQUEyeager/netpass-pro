@@ -15,6 +15,7 @@ router.get('/', auth, async (req, res) => {
     const where = {};
     if (statut) where.statut = statut;
     if (routeur_id) where.routeur_id = routeur_id;
+    // SQLite: pas de mode 'insensitive', on utilise contains simple
     if (search) {
       where.OR = [
         { username: { contains: search, mode: 'insensitive' } }
@@ -65,10 +66,6 @@ router.post('/manuel', auth, async (req, res) => {
       try {
         const { username, password } = generateCredentials();
 
-        const expiration = new Date();
-        expiration.setHours(expiration.getHours() + forfait.duree_heures);
-
-        // 1. Créer la commande en base
         const commande = await prisma.commande.create({
           data: {
             forfait_id,
@@ -79,7 +76,16 @@ router.post('/manuel', auth, async (req, res) => {
           }
         });
 
-        // 2. Créer le ticket en base
+        // Créer l'utilisateur dans MikroTik
+        await createHotspotUser(routeur, {
+          username,
+          password,
+          duree_heures: forfait.duree_heures
+        });
+
+        const expiration = new Date();
+        expiration.setHours(expiration.getHours() + forfait.duree_heures);
+
         const ticket = await prisma.ticket.create({
           data: {
             commande_id: commande.id,
@@ -91,18 +97,6 @@ router.post('/manuel', auth, async (req, res) => {
             date_expiration: expiration
           }
         });
-
-        // 3. Tenter de créer l'utilisateur MikroTik (non bloquant)
-        try {
-          await createHotspotUser(routeur, {
-            username,
-            password,
-            duree_heures: forfait.duree_heures
-          });
-        } catch (mikrotikErr) {
-          console.warn(`[MikroTik] Impossible de créer ${username} sur le routeur: ${mikrotikErr.message}`);
-          // On continue — le ticket est créé, l'admin pourra synchroniser manuellement
-        }
 
         ticketsCrees.push({
           id: ticket.id,
@@ -116,18 +110,9 @@ router.post('/manuel', auth, async (req, res) => {
           site: routeur.site,
           nom_reseau: routeur.nom
         });
-
       } catch (err) {
-        console.error(`[Ticket manuel] Erreur ticket ${i}:`, err.message);
         erreurs.push({ index: i, error: err.message });
       }
-    }
-
-    if (ticketsCrees.length === 0) {
-      return res.status(500).json({
-        error: 'Aucun ticket créé',
-        details: erreurs
-      });
     }
 
     res.json({
@@ -137,7 +122,6 @@ router.post('/manuel', auth, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('[Ticket manuel] Erreur globale:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -151,12 +135,8 @@ router.put('/:id/desactiver', auth, async (req, res) => {
     });
     if (!ticket) return res.status(404).json({ error: 'Ticket introuvable' });
 
-    try {
-      await deleteHotspotUser(ticket.routeur, ticket.username);
-      await disconnectActiveUser(ticket.routeur, ticket.username);
-    } catch (mikrotikErr) {
-      console.warn(`[MikroTik] Erreur désactivation: ${mikrotikErr.message}`);
-    }
+    await deleteHotspotUser(ticket.routeur, ticket.username);
+    await disconnectActiveUser(ticket.routeur, ticket.username);
 
     await prisma.ticket.update({
       where: { id: req.params.id },
